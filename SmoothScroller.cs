@@ -298,7 +298,7 @@ namespace SmoothScroller
 
             titleLabel = new Label
             {
-                Text = "ReadFlow Scroller",
+                Text = "ReadFlow v" + CURRENT_VERSION,
                 Font = new Font("Segoe UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(250, 250, 250),
                 AutoSize = true,
