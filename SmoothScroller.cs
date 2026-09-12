@@ -138,7 +138,7 @@ namespace SmoothScroller
     public class MainForm : Form
     {
         // Application version & auto-updater settings
-        public const string CURRENT_VERSION = "1.0.0";
+        public const string CURRENT_VERSION = "1.0.1";
         private const string VERSION_URL = "https://raw.githubusercontent.com/garysung0/smooth-scroller/main/version.txt";
         private const string EXE_URL = "https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe";
 
