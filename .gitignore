@@ -1,0 +1,5 @@
+# Build and temporary files
+*.tmp
+*.log
+.vs/
+.idea/
