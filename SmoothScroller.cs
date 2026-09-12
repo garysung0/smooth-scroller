@@ -142,18 +142,25 @@ namespace SmoothScroller
         private const string VERSION_URL = "https://raw.githubusercontent.com/garysung0/smooth-scroller/main/version.txt";
         private const string EXE_URL = "https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe";
 
-        // Win32 API imports
+        // Win32 API imports for Input & Global Hooks
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT[] pInputs, int cbSize);
 
         [DllImport("user32.dll")]
         private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
 
-        [DllImport("user32.dll")]
-        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
-        [DllImport("user32.dll")]
-        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
 
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT lpPoint);
@@ -168,7 +175,10 @@ namespace SmoothScroller
         private const uint MOUSEEVENTF_WHEEL = 0x0800;
         private const int WM_NCLBUTTONDOWN = 0xA1;
         private const int HT_CAPTION = 0x2;
-        private const int WM_HOTKEY = 0x0312;
+
+        private const int WH_KEYBOARD_LL = 13;
+        private const int WM_KEYDOWN = 0x0100;
+        private const int WM_SYSKEYDOWN = 0x0104;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct MOUSEINPUT
@@ -188,31 +198,16 @@ namespace SmoothScroller
             public MOUSEINPUT mi;
         }
 
-        // Hotkey IDs
-        private const int HOTKEY_TOGGLE_F8 = 1001;
-        private const int HOTKEY_TOGGLE_CTRL_SPACE = 1002;
-        private const int HOTKEY_SLOWER = 1003;
-        private const int HOTKEY_FASTER = 1004;
-        private const int HOTKEY_REVERSE = 1005;
-
-        // Modifiers
-        private const uint MOD_NONE = 0x0000;
-        private const uint MOD_CONTROL = 0x0002;
-        private const uint MOD_ALT = 0x0001;
-
-        // Virtual Keys
-        private const uint VK_F8 = 0x77;
-        private const uint VK_F7 = 0x76;
-        private const uint VK_SPACE = 0x20;
-        private const uint VK_OEM_4 = 0xDB; // '['
-        private const uint VK_OEM_6 = 0xDD; // ']'
-
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT
         {
             public int X;
             public int Y;
         }
+
+        private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+        private LowLevelKeyboardProc _keyboardProc;
+        private IntPtr _hookId = IntPtr.Zero;
 
         // App state
         private bool isScrolling = false;
@@ -257,7 +252,7 @@ namespace SmoothScroller
         {
             InitializeComponent();
             SetupScrollTimer();
-            RegisterAppHotkeys();
+            InstallKeyboardHook();
             CheckForUpdatesInBackground();
         }
 
@@ -517,8 +512,8 @@ namespace SmoothScroller
             // Hotkey cheat sheet footer
             hintLabel = new Label
             {
-                Text = "Hotkeys: F8: Play/Pause  |  [: Slower  |  ]: Faster  |  F7: Reverse\nMove mouse over your browser window to auto-scroll. (v" + CURRENT_VERSION + ")",
-                Font = new Font("Segoe UI", 8f),
+                Text = "Hotkeys: F8 or F9 or Ctrl+Space: Play/Pause  |  [: Slower  |  ]: Faster  |  F7: Reverse\nMove mouse over your browser window to auto-scroll. (v" + CURRENT_VERSION + ")",
+                Font = new Font("Segoe UI", 7.8f),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Size = new Size(368, 36),
@@ -817,48 +812,56 @@ namespace SmoothScroller
             }
         }
 
-        private void RegisterAppHotkeys()
+        private void InstallKeyboardHook()
         {
-            RegisterHotKey(this.Handle, HOTKEY_TOGGLE_F8, MOD_NONE, VK_F8);
-            RegisterHotKey(this.Handle, HOTKEY_TOGGLE_CTRL_SPACE, MOD_CONTROL | MOD_ALT, VK_SPACE);
-            RegisterHotKey(this.Handle, HOTKEY_SLOWER, MOD_NONE, VK_OEM_4);
-            RegisterHotKey(this.Handle, HOTKEY_FASTER, MOD_NONE, VK_OEM_6);
-            RegisterHotKey(this.Handle, HOTKEY_REVERSE, MOD_NONE, VK_F7);
-        }
-
-        private void UnregisterAppHotkeys()
-        {
-            UnregisterHotKey(this.Handle, HOTKEY_TOGGLE_F8);
-            UnregisterHotKey(this.Handle, HOTKEY_TOGGLE_CTRL_SPACE);
-            UnregisterHotKey(this.Handle, HOTKEY_SLOWER);
-            UnregisterHotKey(this.Handle, HOTKEY_FASTER);
-            UnregisterHotKey(this.Handle, HOTKEY_REVERSE);
-        }
-
-        protected override void WndProc(ref Message m)
-        {
-            base.WndProc(ref m);
-
-            if (m.Msg == WM_HOTKEY)
+            _keyboardProc = HookCallback;
+            using (Process curProcess = Process.GetCurrentProcess())
+            using (ProcessModule curModule = curProcess.MainModule)
             {
-                int id = m.WParam.ToInt32();
-                switch (id)
+                _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardProc, GetModuleHandle(curModule.ModuleName), 0);
+            }
+        }
+
+        private void UninstallKeyboardHook()
+        {
+            if (_hookId != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_hookId);
+                _hookId = IntPtr.Zero;
+            }
+        }
+
+        private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
+            {
+                int vkCode = Marshal.ReadInt32(lParam);
+                bool isCtrl = (Control.ModifierKeys & Keys.Control) == Keys.Control;
+
+                // F8, F9, or Ctrl+Space to Play/Pause
+                if (vkCode == (int)Keys.F8 || vkCode == (int)Keys.F9 || (isCtrl && vkCode == (int)Keys.Space))
                 {
-                    case HOTKEY_TOGGLE_F8:
-                    case HOTKEY_TOGGLE_CTRL_SPACE:
-                        ToggleScroll();
-                        break;
-                    case HOTKEY_SLOWER:
-                        AdjustSpeed(-3);
-                        break;
-                    case HOTKEY_FASTER:
-                        AdjustSpeed(3);
-                        break;
-                    case HOTKEY_REVERSE:
-                        ToggleDirection();
-                        break;
+                    this.BeginInvoke((MethodInvoker)delegate { ToggleScroll(); });
+                    return (IntPtr)1;
+                }
+                // F7 or F6 to Reverse direction
+                else if (vkCode == (int)Keys.F7 || vkCode == (int)Keys.F6)
+                {
+                    this.BeginInvoke((MethodInvoker)delegate { ToggleDirection(); });
+                    return (IntPtr)1;
+                }
+                // '[' (vk 219) or '-' (vk 189) for Slower
+                else if (isScrolling && (vkCode == 219 || vkCode == 189))
+                {
+                    this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(-3); });
+                }
+                // ']' (vk 221) or '=' (vk 187) for Faster
+                else if (isScrolling && (vkCode == 221 || vkCode == 187))
+                {
+                    this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(3); });
                 }
             }
+            return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
         private void CheckForUpdatesInBackground()
@@ -952,7 +955,7 @@ namespace SmoothScroller
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             scrollTimer.Stop();
-            UnregisterAppHotkeys();
+            UninstallKeyboardHook();
             base.OnFormClosing(e);
         }
 
