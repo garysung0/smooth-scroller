@@ -502,21 +502,21 @@ namespace SmoothScroller
 
             Label smoothBadge = new Label
             {
-                Text = "✨ Liquid Continuous Gliding (Sub-pixel 60 FPS)",
+                Text = "Liquid Smooth (60 FPS)",
                 AutoSize = true,
-                Location = new Point(146, 207),
-                Font = new Font("Segoe UI", 8f),
+                Location = new Point(165, 207),
+                Font = new Font("Segoe UI", 8.2f),
                 ForeColor = Color.FromArgb(52, 211, 153)
             };
 
             // Hotkey cheat sheet footer
             hintLabel = new Label
             {
-                Text = "Hotkeys: F8 or F9 or Ctrl+Space: Play/Pause  |  [: Slower  |  ]: Faster  |  F7: Reverse\nMove mouse over your browser window to auto-scroll. (v" + CURRENT_VERSION + ")",
-                Font = new Font("Segoe UI", 7.8f),
+                Text = "Hotkeys: F8: Play/Pause   |   [: Slower   |   ]: Faster   |   F7: Reverse\nMove mouse over your browser window to auto-scroll.",
+                Font = new Font("Segoe UI", 8f),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(368, 36),
+                Size = new Size(368, 34),
                 Location = new Point(16, 240)
             };
 
