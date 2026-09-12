@@ -2,10 +2,19 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+using System.Reflection;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Windows.Forms;
+
+[assembly: AssemblyTitle("ReadFlow Smooth Scroller")]
+[assembly: AssemblyDescription("Smooth Auto-Scroller for Screen Sharing & Reading Sessions")]
+[assembly: AssemblyCompany("Gary Sung")]
+[assembly: AssemblyProduct("ReadFlow Scroller")]
+[assembly: AssemblyCopyright("Copyright © 2026")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 namespace SmoothScroller
 {
