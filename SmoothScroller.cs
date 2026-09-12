@@ -1,7 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace SmoothScroller
@@ -9,7 +12,7 @@ namespace SmoothScroller
     // Custom modern slider: no black ticks, no WinForms clipping bugs, sleek dark style
     public class ModernSlider : Control
     {
-        private int val = 12;
+        private int val = 10;
         private int min = 1;
         private int max = 100;
         private bool isDragging = false;
@@ -134,6 +137,11 @@ namespace SmoothScroller
 
     public class MainForm : Form
     {
+        // Application version & auto-updater settings
+        public const string CURRENT_VERSION = "1.0.0";
+        private const string VERSION_URL = "https://raw.githubusercontent.com/garysung0/smooth-scroller/main/version.txt";
+        private const string EXE_URL = "https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe";
+
         // Win32 API imports
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT[] pInputs, int cbSize);
@@ -220,6 +228,7 @@ namespace SmoothScroller
         private Button closeBtn;
         private Button minBtn;
         private Button compactToggleBtn;
+        private Button updateBtn;
         private Panel bodyPanel;
 
         private Button toggleBtn;
@@ -242,12 +251,14 @@ namespace SmoothScroller
 
         // Accumulator for smooth continuous micro-steps
         private double fractionalAccumulator = 0.0;
+        private string latestRemoteVersion = null;
 
         public MainForm()
         {
             InitializeComponent();
             SetupScrollTimer();
             RegisterAppHotkeys();
+            CheckForUpdatesInBackground();
         }
 
         private void InitializeComponent()
@@ -334,7 +345,24 @@ namespace SmoothScroller
             compactToggleBtn.FlatAppearance.BorderSize = 0;
             compactToggleBtn.Click += (s, e) => ToggleCompactMode();
 
+            // Dynamic Update button in header (appears only when GitHub has a newer version)
+            updateBtn = new Button
+            {
+                Text = "⬆ Update",
+                Size = new Size(82, 26),
+                Location = new Point(162, 6),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 8f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(16, 185, 129), // Emerald
+                Cursor = Cursors.Hand,
+                Visible = false
+            };
+            updateBtn.FlatAppearance.BorderSize = 0;
+            updateBtn.Click += (s, e) => ApplyUpdate();
+
             headerPanel.Controls.Add(titleLabel);
+            headerPanel.Controls.Add(updateBtn);
             headerPanel.Controls.Add(compactToggleBtn);
             headerPanel.Controls.Add(minBtn);
             headerPanel.Controls.Add(closeBtn);
@@ -489,7 +517,7 @@ namespace SmoothScroller
             // Hotkey cheat sheet footer
             hintLabel = new Label
             {
-                Text = "Hotkeys: F8: Play/Pause  |  [: Slower  |  ]: Faster  |  F7: Reverse\nMove mouse over your browser window to auto-scroll.",
+                Text = "Hotkeys: F8: Play/Pause  |  [: Slower  |  ]: Faster  |  F7: Reverse\nMove mouse over your browser window to auto-scroll. (v" + CURRENT_VERSION + ")",
                 Font = new Font("Segoe UI", 8f),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -673,14 +701,7 @@ namespace SmoothScroller
             if (smoothMode)
             {
                 // Liquid Continuous Glide:
-                // Instead of sending 60 or 120 chunks (which cause discrete bursts),
-                // we feed steady micro-steps at 40 FPS (every 25ms).
-                // speed is 1 to 100:
-                // At speed 4 (Very Slow): adds 0.16 units/tick (~6 units/sec = ~5 px/s). Emits 1 unit every ~150ms.
-                // At speed 10 (Calm): adds 0.40 units/tick (~16 units/sec = ~14 px/s). Emits 1 unit every ~60ms.
-                // At speed 20 (Reader): adds 0.80 units/tick (~32 units/sec = ~28 px/s). Emits 1 unit every ~30ms.
-                // At speed 35 (Brisk): adds 1.40 units/tick (~56 units/sec = ~48 px/s).
-                // The browser's scroll animation NEVER stops or pauses. It glides steadily like a gentle teleprompter.
+                // Emits continuous micro-steps at 40 FPS without stopping
                 double deltaPerTick = (speed * 0.04);
                 fractionalAccumulator += deltaPerTick;
 
@@ -837,6 +858,85 @@ namespace SmoothScroller
                         ToggleDirection();
                         break;
                 }
+            }
+        }
+
+        private void CheckForUpdatesInBackground()
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072; // TLS 1.2
+                    using (System.Net.WebClient wc = new System.Net.WebClient())
+                    {
+                        string remoteVerStr = wc.DownloadString(VERSION_URL).Trim();
+                        Version remoteVer = new Version(remoteVerStr);
+                        Version currentVer = new Version(CURRENT_VERSION);
+
+                        if (remoteVer > currentVer)
+                        {
+                            latestRemoteVersion = remoteVerStr;
+                            this.BeginInvoke((MethodInvoker)delegate
+                            {
+                                updateBtn.Text = "⬆ v" + remoteVerStr;
+                                updateBtn.Visible = true;
+                                statusBadge.Text = "✨ Update v" + remoteVerStr + " Available (Click ⬆ to update)";
+                                statusBadge.ForeColor = Color.FromArgb(52, 211, 153);
+                            });
+                        }
+                    }
+                }
+                catch { }
+            });
+        }
+
+        private void ApplyUpdate()
+        {
+            string ver = latestRemoteVersion ?? "latest";
+            DialogResult res = MessageBox.Show(
+                string.Format("A new version of ReadFlow ({0}) is available!\n\nWould you like to download and update now?\nThe application will automatically refresh.", ver),
+                "Update ReadFlow",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+
+            if (res != DialogResult.Yes) return;
+
+            try
+            {
+                updateBtn.Text = "Updating...";
+                updateBtn.Enabled = false;
+
+                string currentExe = Application.ExecutablePath;
+                string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+                string tempExe = Path.Combine(currentDir, "SmoothScroller_new.exe");
+
+                using (System.Net.WebClient wc = new System.Net.WebClient())
+                {
+                    System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072; // TLS 1.2
+                    wc.DownloadFile(EXE_URL, tempExe);
+                }
+
+                // In Windows, a running exe cannot be directly overwritten.
+                // We launch a hidden PowerShell command that waits 600ms for this process to exit,
+                // replaces the executable with the new version, and launches it.
+                string script = string.Format(
+                    "Start-Sleep -Milliseconds 600; Move-Item -Force '{0}' '{1}'; Start-Process '{1}'",
+                    tempExe, currentExe);
+
+                ProcessStartInfo psi = new ProcessStartInfo("powershell.exe", "-WindowStyle Hidden -Command \"" + script + "\"")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                Process.Start(psi);
+                Application.Exit();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Update failed: " + ex.Message, "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                updateBtn.Text = "⬆ Retry";
+                updateBtn.Enabled = true;
             }
         }
 
