@@ -4,13 +4,19 @@ A lightweight (37 KB), standalone Windows utility specifically designed for **Go
 
 It provides gradual, steady auto-scrolling for web articles, PDFs, Google Docs, and eBooks without abrupt trackpad or mouse-wheel jerking, preventing words and sentences from getting cut off while people read together.
 
+## 📥 Direct Download
+
+[![Download SmoothScroller.exe](https://img.shields.io/badge/Download-SmoothScroller.exe%20(37%20KB)-10b981?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe)
+
+> Click the button above to download `SmoothScroller.exe` directly (no installer, no Python, zero dependencies).
+
 ---
 
 ## 🚀 Instant Setup (Zero Dependencies)
 
-- **Single Portable File**: [`SmoothScroller.exe`](file:///c:/Users/garys/OneDrive%20-%20The%20Ohio%20State%20University/My%20Books/AI%20Tools/smooth-scroller/SmoothScroller.exe)
+- **Direct Executable**: [`SmoothScroller.exe`](https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe) (37 KB)
 - **No Installation Required**: Works immediately on any standard Windows 10 or Windows 11 PC (uses built-in Windows .NET Framework 4.8 runtime).
-- **Easy Sharing**: You can email `SmoothScroller.exe`, put it in Google Drive / OneDrive, or send it over Slack/Discord. Anyone can double-click and run it instantly.
+- **Easy Sharing**: You can share this link or send `SmoothScroller.exe` via email, Google Drive, Slack, or Discord. Anyone can double-click and run it instantly.
 
 ---
 
