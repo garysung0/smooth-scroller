@@ -2,9 +2,9 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Windows.Forms;
 using System.Reflection;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -146,7 +146,6 @@ namespace SmoothScroller
 
     public class MainForm : Form
     {
-        // Application version & auto-updater settings
         public const string CURRENT_VERSION = "1.0.1";
         private const string VERSION_URL = "https://raw.githubusercontent.com/garysung0/smooth-scroller/main/version.txt";
         private const string EXE_URL = "https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe";
@@ -221,7 +220,7 @@ namespace SmoothScroller
         // App state
         private bool isScrolling = false;
         private bool scrollDown = true;
-        private int speed = 8; // 1 to 30 px/s (default 8 = comfortable slow reading)
+        private int speed = 8; // 1 to 30 px/s
         private bool isCompact = false;
 
         // High precision 60 FPS animation timer
@@ -241,7 +240,6 @@ namespace SmoothScroller
         private Button dirBtn;
         private ModernSlider speedSlider;
         private Label speedLabel;
-        private Label wpmLabel;
         private Label statusBadge;
         private CheckBox onTopCheck;
         private Label hintLabel;
@@ -270,7 +268,7 @@ namespace SmoothScroller
         private void InitializeComponent()
         {
             this.Text = "ReadFlow - Smooth Auto Scroller";
-            this.Size = new Size(400, 356);
+            this.Size = new Size(380, 296);
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(24, 24, 27); // Zinc 900
@@ -286,11 +284,11 @@ namespace SmoothScroller
             }
             catch { }
 
-            // Header Panel (Draggable title bar)
+            // Header Panel
             headerPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 38,
+                Height = 36,
                 BackColor = Color.FromArgb(39, 39, 42),
                 Cursor = Cursors.SizeAll
             };
@@ -299,10 +297,10 @@ namespace SmoothScroller
             titleLabel = new Label
             {
                 Text = "ReadFlow v" + CURRENT_VERSION,
-                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(250, 250, 250),
                 AutoSize = true,
-                Location = new Point(14, 9),
+                Location = new Point(12, 9),
                 Cursor = Cursors.SizeAll
             };
             titleLabel.MouseDown += Header_MouseDown;
@@ -310,8 +308,8 @@ namespace SmoothScroller
             closeBtn = new Button
             {
                 Text = "✕",
-                Size = new Size(34, 28),
-                Location = new Point(360, 5),
+                Size = new Size(32, 26),
+                Location = new Point(342, 5),
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 9f),
                 ForeColor = Color.FromArgb(161, 161, 170),
@@ -325,8 +323,8 @@ namespace SmoothScroller
             minBtn = new Button
             {
                 Text = "—",
-                Size = new Size(34, 28),
-                Location = new Point(324, 5),
+                Size = new Size(32, 26),
+                Location = new Point(308, 5),
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 9f),
                 ForeColor = Color.FromArgb(161, 161, 170),
@@ -339,9 +337,9 @@ namespace SmoothScroller
 
             compactToggleBtn = new Button
             {
-                Text = "Mini Bar",
-                Size = new Size(68, 26),
-                Location = new Point(250, 6),
+                Text = "Mini",
+                Size = new Size(48, 24),
+                Location = new Point(252, 6),
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 8f),
                 ForeColor = Color.FromArgb(212, 212, 216),
@@ -351,14 +349,13 @@ namespace SmoothScroller
             compactToggleBtn.FlatAppearance.BorderSize = 0;
             compactToggleBtn.Click += (s, e) => ToggleCompactMode();
 
-            // Dynamic Update button in header
             updateBtn = new Button
             {
                 Text = "⬆ Update",
-                Size = new Size(82, 26),
-                Location = new Point(162, 6),
+                Size = new Size(74, 24),
+                Location = new Point(172, 6),
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 8f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 7.8f, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(16, 185, 129),
                 Cursor = Cursors.Hand,
@@ -373,89 +370,80 @@ namespace SmoothScroller
             headerPanel.Controls.Add(minBtn);
             headerPanel.Controls.Add(closeBtn);
 
-            // Main Body Container
+            // Body Container
             bodyPanel = new Panel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(24, 24, 27)
             };
 
-            // Status Badge
+            // Status Badge (Clean & concise)
             statusBadge = new Label
             {
-                Text = "PAUSED  (Press F8 to Scroll)",
+                Text = "PAUSED",
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(251, 191, 36), // Amber
+                ForeColor = Color.FromArgb(251, 191, 36),
                 BackColor = Color.FromArgb(45, 36, 18),
                 TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(368, 26),
-                Location = new Point(16, 10)
+                Size = new Size(348, 24),
+                Location = new Point(16, 8)
             };
 
-            // Big Start/Stop Button
+            // Start/Pause Button
             toggleBtn = new Button
             {
-                Text = "START SCROLLING (F8)",
+                Text = "START (F8)",
                 Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
                 ForeColor = Color.White,
-                BackColor = Color.FromArgb(16, 185, 129), // Emerald 500
+                BackColor = Color.FromArgb(16, 185, 129),
                 FlatStyle = FlatStyle.Flat,
-                Size = new Size(254, 44),
-                Location = new Point(16, 44),
+                Size = new Size(238, 40),
+                Location = new Point(16, 38),
                 Cursor = Cursors.Hand
             };
             toggleBtn.FlatAppearance.BorderSize = 0;
             toggleBtn.Click += (s, e) => ToggleScroll();
 
-            // Direction Toggle Button
+            // Direction Button
             dirBtn = new Button
             {
-                Text = "Down v",
+                Text = "▼ Down",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(228, 228, 231),
                 BackColor = Color.FromArgb(39, 39, 42),
                 FlatStyle = FlatStyle.Flat,
-                Size = new Size(106, 44),
-                Location = new Point(278, 44),
+                Size = new Size(102, 40),
+                Location = new Point(262, 38),
                 Cursor = Cursors.Hand
             };
             dirBtn.FlatAppearance.BorderSize = 1;
             dirBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
             dirBtn.Click += (s, e) => ToggleDirection();
 
-            // Speed Control Row
+            // Speed Row
             speedTitle = new Label
             {
-                Text = "Slow Reading Speed:",
+                Text = "Speed:",
                 Font = new Font("Segoe UI", 9f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(161, 161, 170),
                 AutoSize = true,
-                Location = new Point(16, 98)
+                Location = new Point(16, 88)
             };
 
             speedLabel = new Label
             {
                 Text = "8 px/s",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(56, 189, 248), // Sky blue
+                ForeColor = Color.FromArgb(56, 189, 248),
                 AutoSize = true,
-                Location = new Point(148, 97)
-            };
-
-            wpmLabel = new Label
-            {
-                Text = "~70 WPM (Relaxed Reading)",
-                Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
-                ForeColor = Color.FromArgb(161, 161, 170),
-                AutoSize = true,
-                Location = new Point(206, 98)
+                Location = new Point(64, 87)
             };
 
             slowerBtn = new Button
             {
                 Text = "—",
-                Size = new Size(28, 26),
-                Location = new Point(16, 126),
+                Size = new Size(26, 24),
+                Location = new Point(16, 114),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(39, 39, 42),
@@ -469,16 +457,16 @@ namespace SmoothScroller
             speedSlider = new ModernSlider
             {
                 Value = speed,
-                Location = new Point(50, 126),
-                Size = new Size(304, 26)
+                Location = new Point(46, 114),
+                Size = new Size(288, 24)
             };
             speedSlider.ValueChanged += (s, e) => SetSpeed(speedSlider.Value);
 
             fasterBtn = new Button
             {
                 Text = "+",
-                Size = new Size(28, 26),
-                Location = new Point(356, 126),
+                Size = new Size(26, 24),
+                Location = new Point(338, 114),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(39, 39, 42),
@@ -489,12 +477,12 @@ namespace SmoothScroller
             fasterBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
             fasterBtn.Click += (s, e) => AdjustSpeed(1);
 
-            // 5 Dedicated Slow & Steady Presets for Reading Sessions
-            slowPreset1 = CreatePresetButton("Crawl (2)", 2, new Point(16, 164), new Size(68, 28));
-            slowPreset2 = CreatePresetButton("Gentle (6)", 6, new Point(88, 164), new Size(68, 28));
-            slowPreset3 = CreatePresetButton("Club (10)", 10, new Point(160, 164), new Size(72, 28));
-            slowPreset4 = CreatePresetButton("Flow (16)", 16, new Point(236, 164), new Size(68, 28));
-            slowPreset5 = CreatePresetButton("Brisk (24)", 24, new Point(308, 164), new Size(76, 28));
+            // 5 Minimal Presets
+            slowPreset1 = CreatePresetButton("Crawl (2)", 2, new Point(16, 148), new Size(64, 26));
+            slowPreset2 = CreatePresetButton("Gentle (6)", 6, new Point(84, 148), new Size(66, 26));
+            slowPreset3 = CreatePresetButton("Club (10)", 10, new Point(154, 148), new Size(66, 26));
+            slowPreset4 = CreatePresetButton("Flow (16)", 16, new Point(224, 148), new Size(66, 26));
+            slowPreset5 = CreatePresetButton("Brisk (24)", 24, new Point(294, 148), new Size(70, 26));
 
             // Options Row
             onTopCheck = new CheckBox
@@ -502,31 +490,22 @@ namespace SmoothScroller
                 Text = "Always On Top",
                 Checked = true,
                 AutoSize = true,
-                Location = new Point(20, 206),
+                Location = new Point(18, 186),
                 Font = new Font("Segoe UI", 8.5f),
                 ForeColor = Color.FromArgb(212, 212, 216),
                 Cursor = Cursors.Hand
             };
             onTopCheck.CheckedChanged += (s, e) => this.TopMost = onTopCheck.Checked;
 
-            Label smoothBadge = new Label
-            {
-                Text = "Liquid Smooth (60 FPS)",
-                AutoSize = true,
-                Location = new Point(165, 207),
-                Font = new Font("Segoe UI", 8.2f),
-                ForeColor = Color.FromArgb(52, 211, 153)
-            };
-
-            // Hotkey cheat sheet footer
+            // Single clean hotkey cheat line
             hintLabel = new Label
             {
-                Text = "Hotkeys: F8: Play/Pause   |   [: Slower   |   ]: Faster   |   F7: Reverse\nMove mouse over your browser window to auto-scroll.",
+                Text = "F8: Start/Pause   •   [ / ]: Speed   •   F7: Reverse",
                 Font = new Font("Segoe UI", 8f),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(368, 34),
-                Location = new Point(16, 240)
+                Size = new Size(348, 20),
+                Location = new Point(16, 222)
             };
 
             bodyPanel.Controls.Add(statusBadge);
@@ -534,7 +513,6 @@ namespace SmoothScroller
             bodyPanel.Controls.Add(dirBtn);
             bodyPanel.Controls.Add(speedTitle);
             bodyPanel.Controls.Add(speedLabel);
-            bodyPanel.Controls.Add(wpmLabel);
             bodyPanel.Controls.Add(slowerBtn);
             bodyPanel.Controls.Add(speedSlider);
             bodyPanel.Controls.Add(fasterBtn);
@@ -544,13 +522,12 @@ namespace SmoothScroller
             bodyPanel.Controls.Add(slowPreset4);
             bodyPanel.Controls.Add(slowPreset5);
             bodyPanel.Controls.Add(onTopCheck);
-            bodyPanel.Controls.Add(smoothBadge);
             bodyPanel.Controls.Add(hintLabel);
 
             this.Controls.Add(bodyPanel);
             this.Controls.Add(headerPanel);
 
-            // Outer border paint
+            // Border
             this.Paint += (s, e) =>
             {
                 using (Pen borderPen = new Pen(Color.FromArgb(63, 63, 70), 1))
@@ -565,22 +542,22 @@ namespace SmoothScroller
             isCompact = !isCompact;
             if (isCompact)
             {
-                compactToggleBtn.Text = "Full UI";
-                this.Size = new Size(400, 88);
+                compactToggleBtn.Text = "Full";
+                this.Size = new Size(380, 80);
                 bodyPanel.Controls.Clear();
 
-                toggleBtn.Location = new Point(12, 6);
-                toggleBtn.Size = new Size(204, 36);
-                toggleBtn.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+                toggleBtn.Location = new Point(10, 5);
+                toggleBtn.Size = new Size(196, 32);
+                toggleBtn.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
 
-                dirBtn.Location = new Point(222, 6);
-                dirBtn.Size = new Size(78, 36);
+                dirBtn.Location = new Point(212, 5);
+                dirBtn.Size = new Size(74, 32);
 
                 Button minSlower = new Button
                 {
                     Text = "—",
-                    Size = new Size(40, 36),
-                    Location = new Point(306, 6),
+                    Size = new Size(38, 32),
+                    Location = new Point(292, 5),
                     FlatStyle = FlatStyle.Flat,
                     ForeColor = Color.White,
                     BackColor = Color.FromArgb(39, 39, 42),
@@ -594,8 +571,8 @@ namespace SmoothScroller
                 Button minFaster = new Button
                 {
                     Text = "+",
-                    Size = new Size(40, 36),
-                    Location = new Point(350, 6),
+                    Size = new Size(38, 32),
+                    Location = new Point(334, 5),
                     FlatStyle = FlatStyle.Flat,
                     ForeColor = Color.White,
                     BackColor = Color.FromArgb(39, 39, 42),
@@ -613,8 +590,8 @@ namespace SmoothScroller
             }
             else
             {
-                compactToggleBtn.Text = "Mini Bar";
-                this.Size = new Size(400, 356);
+                compactToggleBtn.Text = "Mini";
+                this.Size = new Size(380, 296);
                 bodyPanel.Controls.Clear();
                 RestoreFullBodyControls();
             }
@@ -623,19 +600,18 @@ namespace SmoothScroller
 
         private void RestoreFullBodyControls()
         {
-            toggleBtn.Location = new Point(16, 44);
-            toggleBtn.Size = new Size(254, 44);
+            toggleBtn.Location = new Point(16, 38);
+            toggleBtn.Size = new Size(238, 40);
             toggleBtn.Font = new Font("Segoe UI", 10.5f, FontStyle.Bold);
 
-            dirBtn.Location = new Point(278, 44);
-            dirBtn.Size = new Size(106, 44);
+            dirBtn.Location = new Point(262, 38);
+            dirBtn.Size = new Size(102, 40);
 
             bodyPanel.Controls.Add(statusBadge);
             bodyPanel.Controls.Add(toggleBtn);
             bodyPanel.Controls.Add(dirBtn);
             bodyPanel.Controls.Add(speedTitle);
             bodyPanel.Controls.Add(speedLabel);
-            bodyPanel.Controls.Add(wpmLabel);
             bodyPanel.Controls.Add(slowerBtn);
             bodyPanel.Controls.Add(speedSlider);
             bodyPanel.Controls.Add(fasterBtn);
@@ -660,7 +636,7 @@ namespace SmoothScroller
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.FromArgb(212, 212, 216),
                 BackColor = Color.FromArgb(39, 39, 42),
-                Font = new Font("Segoe UI", 7.8f),
+                Font = new Font("Segoe UI", 7.5f),
                 Cursor = Cursors.Hand
             };
             btn.FlatAppearance.BorderSize = 1;
@@ -673,7 +649,7 @@ namespace SmoothScroller
         private void SetupScrollTimer()
         {
             scrollTimer = new System.Windows.Forms.Timer();
-            scrollTimer.Interval = 16; // 60 FPS continuous sub-pixel refresh
+            scrollTimer.Interval = 16; // 60 FPS
             scrollTimer.Tick += ScrollTimer_Tick;
         }
 
@@ -687,37 +663,29 @@ namespace SmoothScroller
 
             if (isOverSelf)
             {
-                statusBadge.Text = "ACTIVE (Move mouse over your browser window)";
-                statusBadge.ForeColor = Color.FromArgb(253, 224, 71); // Yellow
+                statusBadge.Text = "HOVER OVER BROWSER";
+                statusBadge.ForeColor = Color.FromArgb(253, 224, 71);
                 statusBadge.BackColor = Color.FromArgb(45, 36, 18);
                 scrollStopwatch.Restart();
                 return;
             }
             else
             {
-                string dirStr = scrollDown ? "DOWN" : "UP";
-                statusBadge.Text = string.Format("SCROLLING  ({0} @ {1} px/s)", dirStr, speed);
-                statusBadge.ForeColor = Color.FromArgb(52, 211, 153); // Emerald
+                statusBadge.Text = "SCROLLING  (" + speed + " px/s)";
+                statusBadge.ForeColor = Color.FromArgb(52, 211, 153);
                 statusBadge.BackColor = Color.FromArgb(6, 78, 59);
             }
 
-            // High precision delta based on exact elapsed time
             double elapsedSeconds = scrollStopwatch.Elapsed.TotalSeconds;
             scrollStopwatch.Restart();
 
-            if (elapsedSeconds > 0.08) elapsedSeconds = 0.016; // guard against pause spikes
+            if (elapsedSeconds > 0.08) elapsedSeconds = 0.016;
 
             int directionMultiplier = scrollDown ? -1 : 1;
 
-            // Liquid Continuous Glide:
-            // 1 pixel in modern Chromium is ~1.2 wheel units.
-            // speed is in pixels per second (1 to 30 px/s).
             double unitsToAdd = (speed * 1.25) * elapsedSeconds;
             fractionalAccumulator += unitsToAdd;
 
-            // Emit micro-steps of 1 or 2 units immediately whenever available.
-            // Because this runs at 60 FPS, the browser receives steady 1-unit pulses
-            // without ever stopping or jerking.
             int unitsToSend = (int)fractionalAccumulator;
             if (unitsToSend >= 1)
             {
@@ -755,7 +723,7 @@ namespace SmoothScroller
         private void ToggleDirection()
         {
             scrollDown = !scrollDown;
-            dirBtn.Text = scrollDown ? "Down v" : "Up ^";
+            dirBtn.Text = scrollDown ? "▼ Down" : "▲ Up";
             UpdateStatusUI();
         }
 
@@ -764,18 +732,6 @@ namespace SmoothScroller
             speed = Math.Max(1, Math.Min(30, newSpeed));
             if (speedSlider != null) speedSlider.Value = speed;
             if (speedLabel != null) speedLabel.Text = speed + " px/s";
-
-            int estWpm = (int)(speed * 8.5);
-            string mood;
-            if (speed <= 3) mood = "Crawl / In-depth Study";
-            else if (speed <= 7) mood = "Gentle Reading";
-            else if (speed <= 12) mood = "Book Club Pace";
-            else if (speed <= 18) mood = "Natural Flow";
-            else mood = "Brisk Reader";
-
-            if (wpmLabel != null)
-                wpmLabel.Text = string.Format("~{0} WPM ({1})", estWpm, mood);
-
             UpdateStatusUI();
         }
 
@@ -786,27 +742,25 @@ namespace SmoothScroller
 
         private void UpdateStatusUI()
         {
-            string dirStr = scrollDown ? "DOWN" : "UP";
-
             if (isScrolling)
             {
                 scrollTimer.Start();
                 scrollStopwatch.Restart();
-                toggleBtn.Text = isCompact ? "PAUSE" : "PAUSE SCROLLING (F8)";
-                toggleBtn.BackColor = Color.FromArgb(239, 68, 68); // Red / Rose
-                statusBadge.Text = string.Format("SCROLLING  ({0} @ {1} px/s)", dirStr, speed);
-                statusBadge.ForeColor = Color.FromArgb(52, 211, 153); // Emerald text
-                statusBadge.BackColor = Color.FromArgb(6, 78, 59); // Dark emerald bg
+                toggleBtn.Text = "PAUSE (F8)";
+                toggleBtn.BackColor = Color.FromArgb(239, 68, 68);
+                statusBadge.Text = "SCROLLING  (" + speed + " px/s)";
+                statusBadge.ForeColor = Color.FromArgb(52, 211, 153);
+                statusBadge.BackColor = Color.FromArgb(6, 78, 59);
             }
             else
             {
                 scrollTimer.Stop();
                 scrollStopwatch.Stop();
-                toggleBtn.Text = isCompact ? "START" : "START SCROLLING (F8)";
-                toggleBtn.BackColor = Color.FromArgb(16, 185, 129); // Emerald 500
-                statusBadge.Text = "PAUSED  (Press F8 to Scroll)";
-                statusBadge.ForeColor = Color.FromArgb(251, 191, 36); // Amber text
-                statusBadge.BackColor = Color.FromArgb(45, 36, 18); // Dark amber bg
+                toggleBtn.Text = "START (F8)";
+                toggleBtn.BackColor = Color.FromArgb(16, 185, 129);
+                statusBadge.Text = "PAUSED";
+                statusBadge.ForeColor = Color.FromArgb(251, 191, 36);
+                statusBadge.BackColor = Color.FromArgb(45, 36, 18);
             }
         }
 
@@ -845,24 +799,20 @@ namespace SmoothScroller
                 int vkCode = Marshal.ReadInt32(lParam);
                 bool isCtrl = (Control.ModifierKeys & Keys.Control) == Keys.Control;
 
-                // F8, F9, or Ctrl+Space to Play/Pause
                 if (vkCode == (int)Keys.F8 || vkCode == (int)Keys.F9 || (isCtrl && vkCode == (int)Keys.Space))
                 {
                     this.BeginInvoke((MethodInvoker)delegate { ToggleScroll(); });
                     return (IntPtr)1;
                 }
-                // F7 or F6 to Reverse direction
                 else if (vkCode == (int)Keys.F7 || vkCode == (int)Keys.F6)
                 {
                     this.BeginInvoke((MethodInvoker)delegate { ToggleDirection(); });
                     return (IntPtr)1;
                 }
-                // '[' (vk 219) or '-' (vk 189) for Slower (-1 px/s)
                 else if (isScrolling && (vkCode == 219 || vkCode == 189))
                 {
                     this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(-1); });
                 }
-                // ']' (vk 221) or '=' (vk 187) for Faster (+1 px/s)
                 else if (isScrolling && (vkCode == 221 || vkCode == 187))
                 {
                     this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(1); });
@@ -891,7 +841,7 @@ namespace SmoothScroller
                             {
                                 updateBtn.Text = "⬆ v" + remoteVerStr;
                                 updateBtn.Visible = true;
-                                statusBadge.Text = "✨ Update v" + remoteVerStr + " Available (Click ⬆ to update)";
+                                statusBadge.Text = "UPDATE AVAILABLE (v" + remoteVerStr + ")";
                                 statusBadge.ForeColor = Color.FromArgb(52, 211, 153);
                             });
                         }
@@ -905,7 +855,7 @@ namespace SmoothScroller
         {
             string ver = latestRemoteVersion ?? "latest";
             DialogResult res = MessageBox.Show(
-                string.Format("A new version of ReadFlow ({0}) is available!\n\nWould you like to download and update now?\nThe application will automatically refresh.", ver),
+                string.Format("Update to version {0} now?\nThe app will refresh automatically.", ver),
                 "Update ReadFlow",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Information);
@@ -914,7 +864,7 @@ namespace SmoothScroller
 
             try
             {
-                updateBtn.Text = "Updating...";
+                updateBtn.Text = "...";
                 updateBtn.Enabled = false;
 
                 string currentExe = Application.ExecutablePath;
@@ -923,7 +873,7 @@ namespace SmoothScroller
 
                 using (System.Net.WebClient wc = new System.Net.WebClient())
                 {
-                    System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072; // TLS 1.2
+                    System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072;
                     wc.DownloadFile(EXE_URL, tempExe);
                 }
 
