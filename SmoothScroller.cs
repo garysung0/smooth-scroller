@@ -9,12 +9,12 @@ using System.Windows.Forms;
 
 namespace SmoothScroller
 {
-    // Custom modern slider: no black ticks, no WinForms clipping bugs, sleek dark style
+    // Custom modern slider tuned for precision slow reading speeds (1 to 30 px/s)
     public class ModernSlider : Control
     {
-        private int val = 10;
+        private int val = 8;
         private int min = 1;
-        private int max = 100;
+        private int max = 30;
         private bool isDragging = false;
         public event EventHandler ValueChanged;
 
@@ -71,7 +71,7 @@ namespace SmoothScroller
             if (usableWidth <= 0) return;
             float fraction = (float)(mouseX - trackMargin) / usableWidth;
             fraction = Math.Max(0f, Math.Min(1f, fraction));
-            this.Value = (int)(min + fraction * (max - min));
+            this.Value = (int)Math.Round(min + fraction * (max - min));
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -212,10 +212,12 @@ namespace SmoothScroller
         // App state
         private bool isScrolling = false;
         private bool scrollDown = true;
-        private int speed = 10; // 1 to 100 (default 10 = calm reading)
-        private bool smoothMode = true; // Liquid continuous glide
+        private int speed = 8; // 1 to 30 px/s (default 8 = comfortable slow reading)
         private bool isCompact = false;
+
+        // High precision 60 FPS animation timer
         private System.Windows.Forms.Timer scrollTimer;
+        private Stopwatch scrollStopwatch = new Stopwatch();
 
         // UI Controls
         private Panel headerPanel;
@@ -233,13 +235,13 @@ namespace SmoothScroller
         private Label wpmLabel;
         private Label statusBadge;
         private CheckBox onTopCheck;
-        private CheckBox smoothCheck;
         private Label hintLabel;
 
-        private Button slowPreset;
-        private Button bookPreset;
-        private Button briskPreset;
-        private Button skimPreset;
+        private Button slowPreset1;
+        private Button slowPreset2;
+        private Button slowPreset3;
+        private Button slowPreset4;
+        private Button slowPreset5;
         private Button slowerBtn;
         private Button fasterBtn;
         private Label speedTitle;
@@ -340,7 +342,7 @@ namespace SmoothScroller
             compactToggleBtn.FlatAppearance.BorderSize = 0;
             compactToggleBtn.Click += (s, e) => ToggleCompactMode();
 
-            // Dynamic Update button in header (appears only when GitHub has a newer version)
+            // Dynamic Update button in header
             updateBtn = new Button
             {
                 Text = "⬆ Update",
@@ -349,7 +351,7 @@ namespace SmoothScroller
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 8f, FontStyle.Bold),
                 ForeColor = Color.White,
-                BackColor = Color.FromArgb(16, 185, 129), // Emerald
+                BackColor = Color.FromArgb(16, 185, 129),
                 Cursor = Cursors.Hand,
                 Visible = false
             };
@@ -415,7 +417,7 @@ namespace SmoothScroller
             // Speed Control Row
             speedTitle = new Label
             {
-                Text = "Reading Speed:",
+                Text = "Slow Reading Speed:",
                 Font = new Font("Segoe UI", 9f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(161, 161, 170),
                 AutoSize = true,
@@ -424,20 +426,20 @@ namespace SmoothScroller
 
             speedLabel = new Label
             {
-                Text = "10 px/s",
+                Text = "8 px/s",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(56, 189, 248), // Sky blue
                 AutoSize = true,
-                Location = new Point(112, 97)
+                Location = new Point(148, 97)
             };
 
             wpmLabel = new Label
             {
-                Text = "~80 WPM (Calm / In-depth Reading)",
+                Text = "~70 WPM (Relaxed Reading)",
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
                 ForeColor = Color.FromArgb(161, 161, 170),
                 AutoSize = true,
-                Location = new Point(176, 98)
+                Location = new Point(206, 98)
             };
 
             slowerBtn = new Button
@@ -453,7 +455,7 @@ namespace SmoothScroller
             };
             slowerBtn.FlatAppearance.BorderSize = 1;
             slowerBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
-            slowerBtn.Click += (s, e) => AdjustSpeed(-3);
+            slowerBtn.Click += (s, e) => AdjustSpeed(-1);
 
             speedSlider = new ModernSlider
             {
@@ -476,13 +478,14 @@ namespace SmoothScroller
             };
             fasterBtn.FlatAppearance.BorderSize = 1;
             fasterBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
-            fasterBtn.Click += (s, e) => AdjustSpeed(3);
+            fasterBtn.Click += (s, e) => AdjustSpeed(1);
 
-            // Preset Buttons tuned for real group reading
-            slowPreset = CreatePresetButton("Very Slow (4)", 4, new Point(16, 164), new Size(84, 28));
-            bookPreset = CreatePresetButton("Calm (10)", 10, new Point(110, 164), new Size(84, 28));
-            briskPreset = CreatePresetButton("Reader (20)", 20, new Point(204, 164), new Size(84, 28));
-            skimPreset = CreatePresetButton("Brisk (35)", 35, new Point(298, 164), new Size(86, 28));
+            // 5 Dedicated Slow & Steady Presets for Reading Sessions
+            slowPreset1 = CreatePresetButton("Crawl (2)", 2, new Point(16, 164), new Size(68, 28));
+            slowPreset2 = CreatePresetButton("Gentle (6)", 6, new Point(88, 164), new Size(68, 28));
+            slowPreset3 = CreatePresetButton("Club (10)", 10, new Point(160, 164), new Size(72, 28));
+            slowPreset4 = CreatePresetButton("Flow (16)", 16, new Point(236, 164), new Size(68, 28));
+            slowPreset5 = CreatePresetButton("Brisk (24)", 24, new Point(308, 164), new Size(76, 28));
 
             // Options Row
             onTopCheck = new CheckBox
@@ -497,17 +500,14 @@ namespace SmoothScroller
             };
             onTopCheck.CheckedChanged += (s, e) => this.TopMost = onTopCheck.Checked;
 
-            smoothCheck = new CheckBox
+            Label smoothBadge = new Label
             {
-                Text = "Liquid Continuous Glide (Zero-Burst, Buttery Smooth)",
-                Checked = true,
+                Text = "✨ Liquid Continuous Gliding (Sub-pixel 60 FPS)",
                 AutoSize = true,
-                Location = new Point(136, 206),
-                Font = new Font("Segoe UI", 8.2f),
-                ForeColor = Color.FromArgb(212, 212, 216),
-                Cursor = Cursors.Hand
+                Location = new Point(146, 207),
+                Font = new Font("Segoe UI", 8f),
+                ForeColor = Color.FromArgb(52, 211, 153)
             };
-            smoothCheck.CheckedChanged += (s, e) => { smoothMode = smoothCheck.Checked; };
 
             // Hotkey cheat sheet footer
             hintLabel = new Label
@@ -529,12 +529,13 @@ namespace SmoothScroller
             bodyPanel.Controls.Add(slowerBtn);
             bodyPanel.Controls.Add(speedSlider);
             bodyPanel.Controls.Add(fasterBtn);
-            bodyPanel.Controls.Add(slowPreset);
-            bodyPanel.Controls.Add(bookPreset);
-            bodyPanel.Controls.Add(briskPreset);
-            bodyPanel.Controls.Add(skimPreset);
+            bodyPanel.Controls.Add(slowPreset1);
+            bodyPanel.Controls.Add(slowPreset2);
+            bodyPanel.Controls.Add(slowPreset3);
+            bodyPanel.Controls.Add(slowPreset4);
+            bodyPanel.Controls.Add(slowPreset5);
             bodyPanel.Controls.Add(onTopCheck);
-            bodyPanel.Controls.Add(smoothCheck);
+            bodyPanel.Controls.Add(smoothBadge);
             bodyPanel.Controls.Add(hintLabel);
 
             this.Controls.Add(bodyPanel);
@@ -579,7 +580,7 @@ namespace SmoothScroller
                 };
                 minSlower.FlatAppearance.BorderSize = 1;
                 minSlower.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
-                minSlower.Click += (s, e) => AdjustSpeed(-3);
+                minSlower.Click += (s, e) => AdjustSpeed(-1);
 
                 Button minFaster = new Button
                 {
@@ -594,7 +595,7 @@ namespace SmoothScroller
                 };
                 minFaster.FlatAppearance.BorderSize = 1;
                 minFaster.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
-                minFaster.Click += (s, e) => AdjustSpeed(3);
+                minFaster.Click += (s, e) => AdjustSpeed(1);
 
                 bodyPanel.Controls.Add(toggleBtn);
                 bodyPanel.Controls.Add(dirBtn);
@@ -629,12 +630,12 @@ namespace SmoothScroller
             bodyPanel.Controls.Add(slowerBtn);
             bodyPanel.Controls.Add(speedSlider);
             bodyPanel.Controls.Add(fasterBtn);
-            bodyPanel.Controls.Add(slowPreset);
-            bodyPanel.Controls.Add(bookPreset);
-            bodyPanel.Controls.Add(briskPreset);
-            bodyPanel.Controls.Add(skimPreset);
+            bodyPanel.Controls.Add(slowPreset1);
+            bodyPanel.Controls.Add(slowPreset2);
+            bodyPanel.Controls.Add(slowPreset3);
+            bodyPanel.Controls.Add(slowPreset4);
+            bodyPanel.Controls.Add(slowPreset5);
             bodyPanel.Controls.Add(onTopCheck);
-            bodyPanel.Controls.Add(smoothCheck);
             bodyPanel.Controls.Add(hintLabel);
 
             UpdateStatusUI();
@@ -650,7 +651,7 @@ namespace SmoothScroller
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.FromArgb(212, 212, 216),
                 BackColor = Color.FromArgb(39, 39, 42),
-                Font = new Font("Segoe UI", 8f),
+                Font = new Font("Segoe UI", 7.8f),
                 Cursor = Cursors.Hand
             };
             btn.FlatAppearance.BorderSize = 1;
@@ -663,7 +664,7 @@ namespace SmoothScroller
         private void SetupScrollTimer()
         {
             scrollTimer = new System.Windows.Forms.Timer();
-            scrollTimer.Interval = 25; // 40 FPS continuous high-cadence refresh
+            scrollTimer.Interval = 16; // 60 FPS continuous sub-pixel refresh
             scrollTimer.Tick += ScrollTimer_Tick;
         }
 
@@ -677,10 +678,10 @@ namespace SmoothScroller
 
             if (isOverSelf)
             {
-                // When cursor is resting on the tool itself, don't scroll the tool
                 statusBadge.Text = "ACTIVE (Move mouse over your browser window)";
                 statusBadge.ForeColor = Color.FromArgb(253, 224, 71); // Yellow
                 statusBadge.BackColor = Color.FromArgb(45, 36, 18);
+                scrollStopwatch.Restart();
                 return;
             }
             else
@@ -691,34 +692,28 @@ namespace SmoothScroller
                 statusBadge.BackColor = Color.FromArgb(6, 78, 59);
             }
 
+            // High precision delta based on exact elapsed time
+            double elapsedSeconds = scrollStopwatch.Elapsed.TotalSeconds;
+            scrollStopwatch.Restart();
+
+            if (elapsedSeconds > 0.08) elapsedSeconds = 0.016; // guard against pause spikes
+
             int directionMultiplier = scrollDown ? -1 : 1;
 
-            if (smoothMode)
-            {
-                // Liquid Continuous Glide:
-                // Emits continuous micro-steps at 40 FPS without stopping
-                double deltaPerTick = (speed * 0.04);
-                fractionalAccumulator += deltaPerTick;
+            // Liquid Continuous Glide:
+            // 1 pixel in modern Chromium is ~1.2 wheel units.
+            // speed is in pixels per second (1 to 30 px/s).
+            double unitsToAdd = (speed * 1.25) * elapsedSeconds;
+            fractionalAccumulator += unitsToAdd;
 
-                int unitsToSend = (int)fractionalAccumulator;
-                if (unitsToSend >= 1)
-                {
-                    fractionalAccumulator -= unitsToSend;
-                    SendWheelEvent(unitsToSend * directionMultiplier);
-                }
-            }
-            else
+            // Emit micro-steps of 1 or 2 units immediately whenever available.
+            // Because this runs at 60 FPS, the browser receives steady 1-unit pulses
+            // without ever stopping or jerking.
+            int unitsToSend = (int)fractionalAccumulator;
+            if (unitsToSend >= 1)
             {
-                // Stepped Notch Mode:
-                // For legacy apps that require standard 120-unit detents
-                double deltaPerTick = (speed * 0.15);
-                fractionalAccumulator += deltaPerTick;
-
-                if (fractionalAccumulator >= 120.0)
-                {
-                    fractionalAccumulator -= 120.0;
-                    SendWheelEvent(120 * directionMultiplier);
-                }
+                fractionalAccumulator -= unitsToSend;
+                SendWheelEvent(unitsToSend * directionMultiplier);
             }
         }
 
@@ -744,6 +739,7 @@ namespace SmoothScroller
         {
             isScrolling = !isScrolling;
             fractionalAccumulator = 0.0;
+            scrollStopwatch.Restart();
             UpdateStatusUI();
         }
 
@@ -756,17 +752,17 @@ namespace SmoothScroller
 
         private void SetSpeed(int newSpeed)
         {
-            speed = Math.Max(1, Math.Min(100, newSpeed));
+            speed = Math.Max(1, Math.Min(30, newSpeed));
             if (speedSlider != null) speedSlider.Value = speed;
             if (speedLabel != null) speedLabel.Text = speed + " px/s";
 
-            int estWpm = (int)(speed * 8);
+            int estWpm = (int)(speed * 8.5);
             string mood;
-            if (speed <= 5) mood = "Very Slow / Study";
-            else if (speed <= 12) mood = "Calm Reading Pace";
-            else if (speed <= 25) mood = "Natural Book Pace";
-            else if (speed <= 45) mood = "Brisk Reading";
-            else mood = "Fast Skimming";
+            if (speed <= 3) mood = "Crawl / In-depth Study";
+            else if (speed <= 7) mood = "Gentle Reading";
+            else if (speed <= 12) mood = "Book Club Pace";
+            else if (speed <= 18) mood = "Natural Flow";
+            else mood = "Brisk Reader";
 
             if (wpmLabel != null)
                 wpmLabel.Text = string.Format("~{0} WPM ({1})", estWpm, mood);
@@ -786,6 +782,7 @@ namespace SmoothScroller
             if (isScrolling)
             {
                 scrollTimer.Start();
+                scrollStopwatch.Restart();
                 toggleBtn.Text = isCompact ? "PAUSE" : "PAUSE SCROLLING (F8)";
                 toggleBtn.BackColor = Color.FromArgb(239, 68, 68); // Red / Rose
                 statusBadge.Text = string.Format("SCROLLING  ({0} @ {1} px/s)", dirStr, speed);
@@ -795,6 +792,7 @@ namespace SmoothScroller
             else
             {
                 scrollTimer.Stop();
+                scrollStopwatch.Stop();
                 toggleBtn.Text = isCompact ? "START" : "START SCROLLING (F8)";
                 toggleBtn.BackColor = Color.FromArgb(16, 185, 129); // Emerald 500
                 statusBadge.Text = "PAUSED  (Press F8 to Scroll)";
@@ -850,15 +848,15 @@ namespace SmoothScroller
                     this.BeginInvoke((MethodInvoker)delegate { ToggleDirection(); });
                     return (IntPtr)1;
                 }
-                // '[' (vk 219) or '-' (vk 189) for Slower
+                // '[' (vk 219) or '-' (vk 189) for Slower (-1 px/s)
                 else if (isScrolling && (vkCode == 219 || vkCode == 189))
                 {
-                    this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(-3); });
+                    this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(-1); });
                 }
-                // ']' (vk 221) or '=' (vk 187) for Faster
+                // ']' (vk 221) or '=' (vk 187) for Faster (+1 px/s)
                 else if (isScrolling && (vkCode == 221 || vkCode == 187))
                 {
-                    this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(3); });
+                    this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(1); });
                 }
             }
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
@@ -920,9 +918,6 @@ namespace SmoothScroller
                     wc.DownloadFile(EXE_URL, tempExe);
                 }
 
-                // In Windows, a running exe cannot be directly overwritten.
-                // We launch a hidden PowerShell command that waits 600ms for this process to exit,
-                // replaces the executable with the new version, and launches it.
                 string script = string.Format(
                     "Start-Sleep -Milliseconds 600; Move-Item -Force '{0}' '{1}'; Start-Process '{1}'",
                     tempExe, currentExe);
