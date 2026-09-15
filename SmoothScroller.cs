@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -13,19 +14,26 @@ using System.Threading;
 [assembly: AssemblyCompany("Gary Sung")]
 [assembly: AssemblyProduct("ReadFlow Scroller")]
 [assembly: AssemblyCopyright("Copyright © 2026")]
-[assembly: AssemblyVersion("1.0.1.0")]
-[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.0.2.0")]
+[assembly: AssemblyFileVersion("1.0.2.0")]
 
 namespace SmoothScroller
 {
-    // Custom modern slider tuned for precision slow reading speeds (1 to 30 px/s)
+    // Custom modern slider tuned for precision slow reading speeds (1 to 15 px/s)
     public class ModernSlider : Control
     {
-        private int val = 8;
+        private int val = 6;
         private int min = 1;
-        private int max = 30;
+        private int max = 15;
         private bool isDragging = false;
         public event EventHandler ValueChanged;
+
+        // Cached GDI brushes and pens to eliminate memory churn on every paint
+        private static readonly SolidBrush TrackBrush = new SolidBrush(Color.FromArgb(63, 63, 70));
+        private static readonly SolidBrush ActiveBrush = new SolidBrush(Color.FromArgb(14, 165, 233));
+        private static readonly SolidBrush GlowBrush = new SolidBrush(Color.FromArgb(50, 14, 165, 233));
+        private static readonly SolidBrush ThumbBrush = new SolidBrush(Color.FromArgb(240, 249, 255));
+        private static readonly Pen ThumbBorderPen = new Pen(Color.FromArgb(14, 165, 233), 2.5f);
 
         public int Value
         {
@@ -95,9 +103,8 @@ namespace SmoothScroller
 
             // Background track (Zinc 700)
             using (GraphicsPath trackPath = GetRoundedRect(new Rectangle(trackMargin, trackY, trackW, trackH), 3))
-            using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(63, 63, 70)))
             {
-                g.FillPath(trackBrush, trackPath);
+                g.FillPath(TrackBrush, trackPath);
             }
 
             // Active track (Sky 500)
@@ -106,9 +113,8 @@ namespace SmoothScroller
             if (activeW > 4)
             {
                 using (GraphicsPath activePath = GetRoundedRect(new Rectangle(trackMargin, trackY, activeW, trackH), 3))
-                using (SolidBrush activeBrush = new SolidBrush(Color.FromArgb(14, 165, 233)))
                 {
-                    g.FillPath(activeBrush, activePath);
+                    g.FillPath(ActiveBrush, activePath);
                 }
             }
 
@@ -117,18 +123,10 @@ namespace SmoothScroller
             int thumbY = this.Height / 2;
             int thumbR = 8;
 
-            // Glow ring
-            using (SolidBrush glow = new SolidBrush(Color.FromArgb(50, 14, 165, 233)))
-            {
-                g.FillEllipse(glow, thumbX - thumbR - 3, thumbY - thumbR - 3, (thumbR * 2) + 6, (thumbR * 2) + 6);
-            }
-            // Thumb inner
-            using (SolidBrush thumbBrush = new SolidBrush(Color.FromArgb(240, 249, 255)))
-            using (Pen thumbBorder = new Pen(Color.FromArgb(14, 165, 233), 2.5f))
-            {
-                g.FillEllipse(thumbBrush, thumbX - thumbR, thumbY - thumbR, thumbR * 2, thumbR * 2);
-                g.DrawEllipse(thumbBorder, thumbX - thumbR, thumbY - thumbR, thumbR * 2, thumbR * 2);
-            }
+            // Glow ring & thumb
+            g.FillEllipse(GlowBrush, thumbX - thumbR - 3, thumbY - thumbR - 3, (thumbR * 2) + 6, (thumbR * 2) + 6);
+            g.FillEllipse(ThumbBrush, thumbX - thumbR, thumbY - thumbR, thumbR * 2, thumbR * 2);
+            g.DrawEllipse(ThumbBorderPen, thumbX - thumbR, thumbY - thumbR, thumbR * 2, thumbR * 2);
         }
 
         private GraphicsPath GetRoundedRect(Rectangle bounds, int radius)
@@ -146,9 +144,16 @@ namespace SmoothScroller
 
     public class MainForm : Form
     {
-        public const string CURRENT_VERSION = "1.0.1";
-        private const string VERSION_URL = "https://raw.githubusercontent.com/garysung0/smooth-scroller/main/version.txt";
-        private const string EXE_URL = "https://github.com/garysung0/smooth-scroller/raw/main/SmoothScroller.exe";
+        public const string CURRENT_VERSION = "1.0.2";
+        private const string VERSION_URL = "https://raw.githubusercontent.com/garysung0/readflow/main/version.txt";
+        private const string EXE_URL = "https://github.com/garysung0/readflow/raw/main/ReadFlow.exe";
+
+        // WinMM Multimedia Timer APIs for true 1ms precision without message queue jitter
+        [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+        private static extern uint timeBeginPeriod(uint uMilliseconds);
+
+        [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+        private static extern uint timeEndPeriod(uint uMilliseconds);
 
         // Win32 API imports for Input & Global Hooks
         [DllImport("user32.dll", SetLastError = true)]
@@ -169,6 +174,9 @@ namespace SmoothScroller
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize);
 
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT lpPoint);
@@ -218,14 +226,76 @@ namespace SmoothScroller
         private IntPtr _hookId = IntPtr.Zero;
 
         // App state
-        private bool isScrolling = false;
-        private bool scrollDown = true;
-        private int speed = 8; // 1 to 30 px/s
+        private volatile bool isScrolling = false;
+        private volatile bool scrollDown = true;
+        private volatile int speed = 6; // 1 to 15 px/s
         private bool isCompact = false;
 
-        // High precision 60 FPS animation timer
-        private System.Windows.Forms.Timer scrollTimer;
-        private Stopwatch scrollStopwatch = new Stopwatch();
+        // High precision isochronous thread engine & UI timer
+        private Thread scrollThread = null;
+        private System.Windows.Forms.Timer uiTimer;
+
+        // Cached GDI resources & controls for zero-leak performance
+        private static readonly Pen BorderPen = new Pen(Color.FromArgb(63, 63, 70), 1);
+        private static readonly Font FontFull = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+        private static readonly Font FontCompact = new Font("Segoe UI", 9f, FontStyle.Bold);
+        private Button minSlowerBtn;
+        private Button minFasterBtn;
+        private bool lastHoverSelf = false;
+
+        // Reusable input structure to prevent 60 FPS heap allocations
+        private readonly INPUT[] mouseInputs = new INPUT[1]
+        {
+            new INPUT { type = INPUT_MOUSE }
+        };
+
+        // Child process tracking to guarantee they close with the app
+        private static readonly List<Process> childProcesses = new List<Process>();
+
+        public static void RegisterChildProcess(Process proc)
+        {
+            if (proc == null) return;
+            lock (childProcesses)
+            {
+                childProcesses.Add(proc);
+            }
+        }
+
+        private static void CleanupChildProcesses()
+        {
+            lock (childProcesses)
+            {
+                foreach (var proc in childProcesses)
+                {
+                    try
+                    {
+                        if (!proc.HasExited)
+                        {
+                            proc.Kill();
+                        }
+                        proc.Dispose();
+                    }
+                    catch { }
+                }
+                childProcesses.Clear();
+            }
+        }
+
+        // Memory optimization: Trim working set to reduce RAM usage down to minimal footprint
+        public static void TrimWorkingSet()
+        {
+            try
+            {
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced);
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                {
+                    SetProcessWorkingSetSize(Process.GetCurrentProcess().Handle, (IntPtr)(-1), (IntPtr)(-1));
+                }
+            }
+            catch { }
+        }
 
         // UI Controls
         private Panel headerPanel;
@@ -253,14 +323,12 @@ namespace SmoothScroller
         private Button fasterBtn;
         private Label speedTitle;
 
-        // Accumulator for smooth continuous micro-steps
-        private double fractionalAccumulator = 0.0;
         private string latestRemoteVersion = null;
 
         public MainForm()
         {
             InitializeComponent();
-            SetupScrollTimer();
+            SetupScrollEngine();
             InstallKeyboardHook();
             CheckForUpdatesInBackground();
         }
@@ -318,7 +386,11 @@ namespace SmoothScroller
             };
             closeBtn.FlatAppearance.BorderSize = 0;
             closeBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(225, 29, 72);
-            closeBtn.Click += (s, e) => Application.Exit();
+            closeBtn.Click += (s, e) =>
+            {
+                this.Close();
+                Environment.Exit(0);
+            };
 
             minBtn = new Button
             {
@@ -333,7 +405,11 @@ namespace SmoothScroller
             };
             minBtn.FlatAppearance.BorderSize = 0;
             minBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(63, 63, 70);
-            minBtn.Click += (s, e) => this.WindowState = FormWindowState.Minimized;
+            minBtn.Click += (s, e) =>
+            {
+                this.WindowState = FormWindowState.Minimized;
+                TrimWorkingSet();
+            };
 
             compactToggleBtn = new Button
             {
@@ -432,7 +508,7 @@ namespace SmoothScroller
 
             speedLabel = new Label
             {
-                Text = "8 px/s",
+                Text = "6 px/s",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(56, 189, 248),
                 AutoSize = true,
@@ -477,12 +553,12 @@ namespace SmoothScroller
             fasterBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
             fasterBtn.Click += (s, e) => AdjustSpeed(1);
 
-            // 5 Minimal Presets
-            slowPreset1 = CreatePresetButton("Crawl (2)", 2, new Point(16, 148), new Size(64, 26));
-            slowPreset2 = CreatePresetButton("Gentle (6)", 6, new Point(84, 148), new Size(66, 26));
-            slowPreset3 = CreatePresetButton("Club (10)", 10, new Point(154, 148), new Size(66, 26));
-            slowPreset4 = CreatePresetButton("Flow (16)", 16, new Point(224, 148), new Size(66, 26));
-            slowPreset5 = CreatePresetButton("Brisk (24)", 24, new Point(294, 148), new Size(70, 26));
+            // 5 Precision Slow Reading Presets (0 - 15 px/s)
+            slowPreset1 = CreatePresetButton("Crawl (1)", 1, new Point(16, 148), new Size(64, 26));
+            slowPreset2 = CreatePresetButton("Study (3)", 3, new Point(84, 148), new Size(66, 26));
+            slowPreset3 = CreatePresetButton("Gentle (6)", 6, new Point(154, 148), new Size(66, 26));
+            slowPreset4 = CreatePresetButton("Reader (10)", 10, new Point(224, 148), new Size(66, 26));
+            slowPreset5 = CreatePresetButton("Flow (14)", 14, new Point(294, 148), new Size(70, 26));
 
             // Options Row
             onTopCheck = new CheckBox
@@ -500,7 +576,7 @@ namespace SmoothScroller
             // Single clean hotkey cheat line
             hintLabel = new Label
             {
-                Text = "F8: Start/Pause   •   [ / ]: Speed   •   F7: Reverse",
+                Text = "F8: Start/Pause   •   - / +: Speed   •   F7: Reverse",
                 Font = new Font("Segoe UI", 8f),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 TextAlign = ContentAlignment.MiddleCenter,
@@ -527,13 +603,41 @@ namespace SmoothScroller
             this.Controls.Add(bodyPanel);
             this.Controls.Add(headerPanel);
 
-            // Border
+            // Pre-create compact mode buttons to prevent repeated control allocations
+            minSlowerBtn = new Button
+            {
+                Text = "—",
+                Size = new Size(38, 32),
+                Location = new Point(292, 5),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(39, 39, 42),
+                Font = FontCompact,
+                Cursor = Cursors.Hand
+            };
+            minSlowerBtn.FlatAppearance.BorderSize = 1;
+            minSlowerBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
+            minSlowerBtn.Click += (s, e) => AdjustSpeed(-1);
+
+            minFasterBtn = new Button
+            {
+                Text = "+",
+                Size = new Size(38, 32),
+                Location = new Point(334, 5),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(39, 39, 42),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            minFasterBtn.FlatAppearance.BorderSize = 1;
+            minFasterBtn.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
+            minFasterBtn.Click += (s, e) => AdjustSpeed(1);
+
+            // Border using cached Pen
             this.Paint += (s, e) =>
             {
-                using (Pen borderPen = new Pen(Color.FromArgb(63, 63, 70), 1))
-                {
-                    e.Graphics.DrawRectangle(borderPen, 0, 0, this.Width - 1, this.Height - 1);
-                }
+                e.Graphics.DrawRectangle(BorderPen, 0, 0, this.Width - 1, this.Height - 1);
             };
         }
 
@@ -548,45 +652,15 @@ namespace SmoothScroller
 
                 toggleBtn.Location = new Point(10, 5);
                 toggleBtn.Size = new Size(196, 32);
-                toggleBtn.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+                toggleBtn.Font = FontCompact;
 
                 dirBtn.Location = new Point(212, 5);
                 dirBtn.Size = new Size(74, 32);
 
-                Button minSlower = new Button
-                {
-                    Text = "—",
-                    Size = new Size(38, 32),
-                    Location = new Point(292, 5),
-                    FlatStyle = FlatStyle.Flat,
-                    ForeColor = Color.White,
-                    BackColor = Color.FromArgb(39, 39, 42),
-                    Font = new Font("Segoe UI", 9f, FontStyle.Bold),
-                    Cursor = Cursors.Hand
-                };
-                minSlower.FlatAppearance.BorderSize = 1;
-                minSlower.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
-                minSlower.Click += (s, e) => AdjustSpeed(-1);
-
-                Button minFaster = new Button
-                {
-                    Text = "+",
-                    Size = new Size(38, 32),
-                    Location = new Point(334, 5),
-                    FlatStyle = FlatStyle.Flat,
-                    ForeColor = Color.White,
-                    BackColor = Color.FromArgb(39, 39, 42),
-                    Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-                    Cursor = Cursors.Hand
-                };
-                minFaster.FlatAppearance.BorderSize = 1;
-                minFaster.FlatAppearance.BorderColor = Color.FromArgb(63, 63, 70);
-                minFaster.Click += (s, e) => AdjustSpeed(1);
-
                 bodyPanel.Controls.Add(toggleBtn);
                 bodyPanel.Controls.Add(dirBtn);
-                bodyPanel.Controls.Add(minSlower);
-                bodyPanel.Controls.Add(minFaster);
+                bodyPanel.Controls.Add(minSlowerBtn);
+                bodyPanel.Controls.Add(minFasterBtn);
             }
             else
             {
@@ -596,13 +670,14 @@ namespace SmoothScroller
                 RestoreFullBodyControls();
             }
             this.Refresh();
+            TrimWorkingSet();
         }
 
         private void RestoreFullBodyControls()
         {
             toggleBtn.Location = new Point(16, 38);
             toggleBtn.Size = new Size(238, 40);
-            toggleBtn.Font = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+            toggleBtn.Font = FontFull;
 
             dirBtn.Location = new Point(262, 38);
             dirBtn.Size = new Size(102, 40);
@@ -646,66 +721,148 @@ namespace SmoothScroller
             return btn;
         }
 
-        private void SetupScrollTimer()
+        private void SetupScrollEngine()
         {
-            scrollTimer = new System.Windows.Forms.Timer();
-            scrollTimer.Interval = 16; // 60 FPS
-            scrollTimer.Tick += ScrollTimer_Tick;
+            uiTimer = new System.Windows.Forms.Timer();
+            uiTimer.Interval = 80; // 12 FPS lightweight UI monitor
+            uiTimer.Tick += UiTimer_Tick;
         }
 
-        private void ScrollTimer_Tick(object sender, EventArgs e)
+        private void UiTimer_Tick(object sender, EventArgs e)
         {
             if (!isScrolling) return;
 
             POINT pt;
             GetCursorPos(out pt);
-            bool isOverSelf = this.Bounds.Contains(new Point(pt.X, pt.Y));
+            bool isOverSelf = false;
+            try
+            {
+                isOverSelf = this.Bounds.Contains(new Point(pt.X, pt.Y));
+            }
+            catch { }
 
             if (isOverSelf)
             {
-                statusBadge.Text = "HOVER OVER BROWSER";
-                statusBadge.ForeColor = Color.FromArgb(253, 224, 71);
-                statusBadge.BackColor = Color.FromArgb(45, 36, 18);
-                scrollStopwatch.Restart();
-                return;
+                if (!lastHoverSelf)
+                {
+                    lastHoverSelf = true;
+                    statusBadge.Text = "HOVER OVER BROWSER";
+                    statusBadge.ForeColor = Color.FromArgb(253, 224, 71);
+                    statusBadge.BackColor = Color.FromArgb(45, 36, 18);
+                }
             }
             else
             {
-                statusBadge.Text = "SCROLLING  (" + speed + " px/s)";
-                statusBadge.ForeColor = Color.FromArgb(52, 211, 153);
-                statusBadge.BackColor = Color.FromArgb(6, 78, 59);
+                if (lastHoverSelf)
+                {
+                    lastHoverSelf = false;
+                    statusBadge.Text = "SCROLLING  (" + speed + " px/s)";
+                    statusBadge.ForeColor = Color.FromArgb(52, 211, 153);
+                    statusBadge.BackColor = Color.FromArgb(6, 78, 59);
+                }
             }
+        }
 
-            double elapsedSeconds = scrollStopwatch.Elapsed.TotalSeconds;
-            scrollStopwatch.Restart();
+        private void StartScrollWorker()
+        {
+            StopScrollWorker();
+            timeBeginPeriod(1);
+            scrollThread = new Thread(ScrollWorkerLoop);
+            scrollThread.IsBackground = true;
+            scrollThread.Priority = ThreadPriority.AboveNormal;
+            scrollThread.Start();
+        }
 
-            if (elapsedSeconds > 0.08) elapsedSeconds = 0.016;
-
-            int directionMultiplier = scrollDown ? -1 : 1;
-
-            double unitsToAdd = (speed * 1.25) * elapsedSeconds;
-            fractionalAccumulator += unitsToAdd;
-
-            int unitsToSend = (int)fractionalAccumulator;
-            if (unitsToSend >= 1)
+        private void StopScrollWorker()
+        {
+            if (scrollThread != null)
             {
-                fractionalAccumulator -= unitsToSend;
-                SendWheelEvent(unitsToSend * directionMultiplier);
+                try
+                {
+                    if (scrollThread.IsAlive)
+                    {
+                        scrollThread.Join(120);
+                    }
+                }
+                catch { }
+                scrollThread = null;
+            }
+            timeEndPeriod(1);
+        }
+
+        private void ScrollWorkerLoop()
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            double nextPulseMs = 0.0;
+
+            while (isScrolling)
+            {
+                POINT pt;
+                GetCursorPos(out pt);
+                bool isOverSelf = false;
+                try
+                {
+                    isOverSelf = this.Bounds.Contains(new Point(pt.X, pt.Y));
+                }
+                catch { }
+
+                if (isOverSelf)
+                {
+                    nextPulseMs = sw.Elapsed.TotalMilliseconds + 40.0;
+                    Thread.Sleep(20);
+                    continue;
+                }
+
+                // In Windows / Chromium: 1 notch = 120 units = ~100px.
+                // 1 unit = ~0.833px.
+                // Target micro-units per second = speed (px/s) * 1.20.
+                int curSpeed = speed;
+                double unitsPerSec = Math.Max(0.5, curSpeed * 1.20);
+                double intervalMs = 1000.0 / unitsPerSec;
+
+                double nowMs = sw.Elapsed.TotalMilliseconds;
+                if (nowMs >= nextPulseMs)
+                {
+                    // Dispatch strictly 1 single micro-unit: zero bunching into 2 or 3!
+                    int dir = scrollDown ? -1 : 1;
+                    SendWheelEvent(dir);
+
+                    if (nextPulseMs <= 0 || (nowMs - nextPulseMs) > (intervalMs * 1.5))
+                    {
+                        nextPulseMs = nowMs + intervalMs;
+                    }
+                    else
+                    {
+                        nextPulseMs += intervalMs;
+                    }
+                }
+
+                double waitMs = nextPulseMs - sw.Elapsed.TotalMilliseconds;
+                if (waitMs > 2.0)
+                {
+                    Thread.Sleep((int)(waitMs - 1.0));
+                }
+                else if (waitMs > 0.05)
+                {
+                    Thread.SpinWait(20);
+                }
+                else
+                {
+                    Thread.Sleep(1);
+                }
             }
         }
 
         private void SendWheelEvent(int wheelDelta)
         {
-            INPUT[] inputs = new INPUT[1];
-            inputs[0].type = INPUT_MOUSE;
-            inputs[0].mi.dx = 0;
-            inputs[0].mi.dy = 0;
-            inputs[0].mi.dwFlags = MOUSEEVENTF_WHEEL;
-            inputs[0].mi.mouseData = unchecked((uint)wheelDelta);
-            inputs[0].mi.time = 0;
-            inputs[0].mi.dwExtraInfo = IntPtr.Zero;
+            mouseInputs[0].mi.dx = 0;
+            mouseInputs[0].mi.dy = 0;
+            mouseInputs[0].mi.dwFlags = MOUSEEVENTF_WHEEL;
+            mouseInputs[0].mi.mouseData = unchecked((uint)wheelDelta);
+            mouseInputs[0].mi.time = 0;
+            mouseInputs[0].mi.dwExtraInfo = IntPtr.Zero;
 
-            uint sent = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+            uint sent = SendInput(1, mouseInputs, Marshal.SizeOf(typeof(INPUT)));
             if (sent == 0)
             {
                 mouse_event(MOUSEEVENTF_WHEEL, 0, 0, unchecked((uint)wheelDelta), UIntPtr.Zero);
@@ -715,8 +872,16 @@ namespace SmoothScroller
         private void ToggleScroll()
         {
             isScrolling = !isScrolling;
-            fractionalAccumulator = 0.0;
-            scrollStopwatch.Restart();
+            if (isScrolling)
+            {
+                StartScrollWorker();
+                if (uiTimer != null) uiTimer.Start();
+            }
+            else
+            {
+                StopScrollWorker();
+                if (uiTimer != null) uiTimer.Stop();
+            }
             UpdateStatusUI();
         }
 
@@ -729,10 +894,13 @@ namespace SmoothScroller
 
         private void SetSpeed(int newSpeed)
         {
-            speed = Math.Max(1, Math.Min(30, newSpeed));
+            speed = Math.Max(1, Math.Min(15, newSpeed));
             if (speedSlider != null) speedSlider.Value = speed;
             if (speedLabel != null) speedLabel.Text = speed + " px/s";
-            UpdateStatusUI();
+            if (isScrolling && statusBadge != null)
+            {
+                statusBadge.Text = "SCROLLING  (" + speed + " px/s)";
+            }
         }
 
         private void AdjustSpeed(int delta)
@@ -742,10 +910,9 @@ namespace SmoothScroller
 
         private void UpdateStatusUI()
         {
+            lastHoverSelf = false;
             if (isScrolling)
             {
-                scrollTimer.Start();
-                scrollStopwatch.Restart();
                 toggleBtn.Text = "PAUSE (F8)";
                 toggleBtn.BackColor = Color.FromArgb(239, 68, 68);
                 statusBadge.Text = "SCROLLING  (" + speed + " px/s)";
@@ -754,19 +921,24 @@ namespace SmoothScroller
             }
             else
             {
-                scrollTimer.Stop();
-                scrollStopwatch.Stop();
                 toggleBtn.Text = "START (F8)";
                 toggleBtn.BackColor = Color.FromArgb(16, 185, 129);
                 statusBadge.Text = "PAUSED";
                 statusBadge.ForeColor = Color.FromArgb(251, 191, 36);
                 statusBadge.BackColor = Color.FromArgb(45, 36, 18);
+                TrimWorkingSet();
             }
         }
 
         private void MainForm_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Space)
+            if (e.KeyCode == Keys.Escape)
+            {
+                this.Close();
+                Environment.Exit(0);
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Space)
             {
                 ToggleScroll();
                 e.Handled = true;
@@ -809,11 +981,11 @@ namespace SmoothScroller
                     this.BeginInvoke((MethodInvoker)delegate { ToggleDirection(); });
                     return (IntPtr)1;
                 }
-                else if (isScrolling && (vkCode == 219 || vkCode == 189))
+                else if (isScrolling && (vkCode == 189 || vkCode == (int)Keys.Subtract))
                 {
                     this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(-1); });
                 }
-                else if (isScrolling && (vkCode == 221 || vkCode == 187))
+                else if (isScrolling && (vkCode == 187 || vkCode == (int)Keys.Add))
                 {
                     this.BeginInvoke((MethodInvoker)delegate { AdjustSpeed(1); });
                 }
@@ -846,6 +1018,7 @@ namespace SmoothScroller
                             });
                         }
                     }
+                    TrimWorkingSet();
                 }
                 catch { }
             });
@@ -886,7 +1059,8 @@ namespace SmoothScroller
                     CreateNoWindow = true,
                     UseShellExecute = false
                 };
-                Process.Start(psi);
+                Process p = Process.Start(psi);
+                if (p != null) RegisterChildProcess(p);
                 Application.Exit();
             }
             catch (Exception ex)
@@ -906,16 +1080,76 @@ namespace SmoothScroller
             }
         }
 
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.Style |= 0x00020000; // WS_MINIMIZEBOX
+                cp.Style |= 0x00080000; // WS_SYSMENU
+                return cp;
+            }
+        }
+
+        private const int WM_CLOSE = 0x0010;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_CLOSE)
+            {
+                base.WndProc(ref m);
+                Environment.Exit(0);
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            TrimWorkingSet();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (this.WindowState == FormWindowState.Minimized)
+            {
+                TrimWorkingSet();
+            }
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            scrollTimer.Stop();
-            UninstallKeyboardHook();
+            try
+            {
+                isScrolling = false;
+                StopScrollWorker();
+                if (uiTimer != null)
+                {
+                    uiTimer.Stop();
+                    uiTimer.Dispose();
+                    uiTimer = null;
+                }
+                UninstallKeyboardHook();
+                CleanupChildProcesses();
+            }
+            catch { }
             base.OnFormClosing(e);
+            Environment.Exit(0);
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            base.OnFormClosed(e);
+            // Guarantee all background processes, threads, and handles exit cleanly immediately
+            Environment.Exit(0);
         }
 
         [STAThread]
         public static void Main()
         {
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => CleanupChildProcesses();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm());

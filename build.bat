@@ -6,11 +6,12 @@ if not exist %CSC% (
     exit /b 1
 )
 
-echo Compiling SmoothScroller.exe with embedded app.ico...
-%CSC% /nologo /target:winexe /optimize+ /platform:anycpu /win32icon:"app.ico" /r:System.dll,System.Drawing.dll,System.Windows.Forms.dll /out:"SmoothScroller.exe" "SmoothScroller.cs"
+echo Compiling ReadFlow.exe with embedded app.ico...
+%CSC% /nologo /target:winexe /optimize+ /platform:anycpu /win32icon:"app.ico" /r:System.dll,System.Drawing.dll,System.Windows.Forms.dll /out:"ReadFlow.exe" "SmoothScroller.cs"
 
 if %ERRORLEVEL% equ 0 (
-    echo [SUCCESS] Built SmoothScroller.exe successfully!
+    copy /y "ReadFlow.exe" "SmoothScroller.exe" >nul
+    echo [SUCCESS] Built ReadFlow.exe and SmoothScroller.exe successfully!
 ) else (
     echo [ERROR] Compilation failed!
     exit /b %ERRORLEVEL%
